@@ -1,0 +1,241 @@
+## following was imported to run the RF model
+from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV, cross_val_predict
+from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score, balanced_accuracy_score, precision_score, recall_score, confusion_matrix, classification_report
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import make_pipeline
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+## the following code was used to run the RF model
+
+df_testing3['Sleep quality'] = df_testing3['Sleep quality'].astype(int)
+
+X = df_testing3[predictors]
+y = df_testing3['Sleep quality']
+
+ordinal_encoder = OrdinalEncoder()
+y_encoded = ordinal_encoder.fit_transform(y.values.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+rf_model_with_tuning = RandomForestClassifier(random_state=42, n_estimators=100)
+
+param_dist = {
+    'n_estimators': list(range(100, 701, 50)),
+    'max_depth': list(range(2, 33)),
+    'min_samples_split': list(range(2, 16, 2)),
+    'min_samples_leaf': list(range(2, 16, 2)),
+    'bootstrap': [True, False],
+    'max_features': ['log2', 'sqrt'],
+    'criterion': ['gini', 'entropy', 'log_loss'],
+    'class_weight': ['balanced', 'balanced_subsample', None]
+}
+
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+random_search_rf_tuning = RandomizedSearchCV(
+    rf_model_with_tuning,
+    param_distributions=param_dist,
+    cv=cv,
+    scoring='f1_macro',
+    random_state=42,
+    n_jobs=-1,
+    n_iter=100,
+    verbose=1
+)
+
+random_search_rf_tuning.fit(X_train_scaled, y_train)
+
+print("Best Parameters:", random_search_rf_tuning.best_params_)
+
+best_rf_model_tuning = random_search_rf_tuning.best_estimator_
+
+y_cv_pred_rf_best_tuning = cross_val_predict(best_rf_model_tuning, X_train_scaled, y_train, cv=cv)
+
+best_rf_model_tuning.fit(X_train_scaled, y_train)
+y_test_pred_rf_best_tuning = best_rf_model_tuning.predict(X_test_scaled)
+
+f1_macro_test_rf_best = f1_score(y_test, y_test_pred_rf_best_tuning, average='macro')
+balanced_acc_test_rf_best = balanced_accuracy_score(y_test, y_test_pred_rf_best_tuning)
+precision_test_rf_best = precision_score(y_test, y_test_pred_rf_best_tuning, average='macro')
+recall_test_rf_best = recall_score(y_test, y_test_pred_rf_best_tuning, average='macro')
+
+print("\nModel Performance Metrics on Test Set - Random Forest (Best Model Tuned):")
+print(f"F1 Macro tuned RF: {f1_macro_test_rf_best}")
+print(f"Balanced Accuracy tuned RF: {balanced_acc_test_rf_best}")
+print(f"Precision Macro tuned RF: {precision_test_rf_best}")
+print(f"Recall Macro tuned RF: {recall_test_rf_best}")
+
+
+original_classes = ordinal_encoder.categories_[0]
+
+conf_mat_test_rf_best_tuning = confusion_matrix(y_test, y_test_pred_rf_best_tuning)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_mat_test_rf_best_tuning, annot=True, fmt="d", cmap="Blues", xticklabels=original_classes, yticklabels=original_classes )
+plt.title("Confusion Matrix - Random Forest - Tuned")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.show()
+
+
+classification_rep = classification_report(y_test, y_test_pred_rf_best_tuning, target_names=original_classes.astype(str), digits=3)
+print(classification_rep)
+
+
+
+
+## the following is the RF code including SMOTE
+
+df_testing3['Sleep quality'] = df_testing3['Sleep quality'].astype(int)
+
+X = df_testing3[predictors]
+y = df_testing3['Sleep quality']
+
+
+ordinal_encoder = OrdinalEncoder()
+y_encoded = ordinal_encoder.fit_transform(y.values.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+param_dist = {
+    'randomforestclassifier__n_estimators': list(range(100, 701, 50)),
+    'randomforestclassifier__max_depth': list(range(2, 33)),
+    'randomforestclassifier__min_samples_split': list(range(2, 16, 2)),
+    'randomforestclassifier__min_samples_leaf': list(range(2, 16, 2)),
+    'randomforestclassifier__bootstrap': [True, False],
+    'randomforestclassifier__max_features': ['log2', 'sqrt'],
+    'randomforestclassifier__class_weight': ['balanced', 'balanced_subsample', None],
+    'randomforestclassifier__criterion': ['gini', 'entropy', 'log_loss']
+}
+
+imba_pipeline_rf_tuning_smote = make_pipeline(SMOTE(random_state=42), RandomForestClassifier(random_state=42))
+
+search_imba_rf_tuned_smote = RandomizedSearchCV(imba_pipeline_rf_tuning_smote, param_distributions=param_dist, cv=cv, scoring='f1_macro',
+                                  return_train_score=True, random_state=42, n_jobs=-1, n_iter=100, verbose=1)
+search_imba_rf_tuned_smote.fit(X_train_scaled, y_train)
+
+print("Best Parameters for RandomForest with SMOTE:", search_imba_rf_tuned_smote.best_params_)
+
+y_test_predict_rf_smote = search_imba_rf_tuned_smote.predict(X_test_scaled)
+
+y_cv_pred_rf_best_tuning = cross_val_predict(search_imba_rf_tuned_smote.best_estimator_, X_train_scaled, y_train, cv=cv)
+
+f1_macro_test_imba_rf_smote = f1_score(ordinal_encoder.inverse_transform(y_test.reshape(-1, 1)), ordinal_encoder.inverse_transform(y_test_predict_rf_smote.reshape(-1, 1)), average='macro')
+balanced_acc_test_imba_rf_smote = balanced_accuracy_score(ordinal_encoder.inverse_transform(y_test.reshape(-1, 1)), ordinal_encoder.inverse_transform(y_test_predict_rf_smote.reshape(-1, 1)))
+precision_test_imba_rf_smote = precision_score(ordinal_encoder.inverse_transform(y_test.reshape(-1, 1)), ordinal_encoder.inverse_transform(y_test_predict_rf_smote.reshape(-1, 1)), average='macro')
+recall_test_imba_rf_smote = recall_score(ordinal_encoder.inverse_transform(y_test.reshape(-1, 1)), ordinal_encoder.inverse_transform(y_test_predict_rf_smote.reshape(-1, 1)), average='macro')
+
+print("\nModel Performance Metrics on Test Set - Random Forest with SMOTE (Best Model):")
+print(f"F1 Macro: {f1_macro_test_imba_rf_smote}")
+print(f"Balanced Accuracy: {balanced_acc_test_imba_rf_smote}")
+print(f"Precision Macro: {precision_test_imba_rf_smote}")
+print(f"Recall Macro: {recall_test_imba_rf_smote}")
+
+conf_mat_test_rf_tuned_smote = confusion_matrix(y_test, y_test_predict_rf_smote)
+
+original_classes = ordinal_encoder.categories_[0]
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_mat_test_rf_tuned_smote, annot=True, fmt="d", cmap="Blues", xticklabels=original_classes, yticklabels=original_classes)
+plt.title("Confusion Matrix - Random Forest - Tuned - SMOTE")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.show()
+
+print("\nClassification Report - Logistic Regression with SMOTE (Best Model):")
+print(classification_report(y_test, y_test_predict_rf_smote, digits=3))
+
+
+## the following was used to do feature importance
+best_rf_model = search_imba_rf_tuned_smote.best_estimator_.named_steps['randomforestclassifier']
+
+feature_importances = best_rf_model.feature_importances_
+
+feature_importance_df = pd.DataFrame({'Feature': X.columns, 'Importance': feature_importances})
+feature_importance_df = feature_importance_df.sort_values(by='Importance', ascending=False)
+
+print("\nFeature Importances:")
+print(feature_importance_df)
+
+
+plt.figure(figsize=(16, 8))
+plt.subplots_adjust(left=0.15)  # Adjust the left margin as needed
+
+colors = sns.color_palette('viridis', len(feature_importance_df))
+
+
+bars = plt.barh(feature_importance_df['Feature'], feature_importance_df['Importance'], color=colors)
+for bar, label in zip(bars, feature_importance_df['Importance']):
+    plt.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2, f'{label:.3f}', 
+             va='center', ha='left', fontsize=8)
+
+plt.xlabel('Importance')
+plt.title('Feature Importances - RandomForest with SMOTE (Best Model)')
+plt.gca().invert_yaxis()  
+plt.show()
+
+## and the following was used to analyze the gender differences:
+
+df_testing3_reset = df_testing3.reset_index(drop=True)
+
+results = pd.DataFrame({
+    'Gender': df_testing3_reset.loc[X_test.index, 'Gender'],
+    'True_Label': ordinal_encoder.inverse_transform(y_test.reshape(-1, 1)).flatten(),
+    'Predicted_Label': ordinal_encoder.inverse_transform(y_test_predict_rf_smote.reshape(-1, 1)).flatten(),
+    'Features': X_test.values.tolist()
+})
+
+
+
+false_positives_by_class = {}
+false_negatives_by_class = {}
+fp_by_gender_by_class = {}
+fn_by_gender_by_class = {}
+
+total_fp_by_gender = results[results['Predicted_Label'] != results['True_Label']].groupby('Gender').size()
+total_fn_by_gender = results[results['Predicted_Label'] != results['True_Label']].groupby('Gender').size()
+
+print("\nTotal False Positives by Gender:")
+print(total_fp_by_gender)
+
+print("\nTotal False Negatives by Gender:")
+print(total_fn_by_gender)
+
+for class_label in range(1, 8):
+    false_positives_by_class[class_label] = results[(results['True_Label'] != class_label) & (results['Predicted_Label'] == class_label)]
+    false_negatives_by_class[class_label] = results[(results['True_Label'] == class_label) & (results['Predicted_Label'] != class_label)]
+
+    fp_by_gender_by_class[class_label] = false_positives_by_class[class_label].groupby('Gender').size()
+    fn_by_gender_by_class[class_label] = false_negatives_by_class[class_label].groupby('Gender').size()
+
+    print(f"\nClass {class_label} - False Positives by Gender:")
+    print(fp_by_gender_by_class[class_label])
+
+    print(f"\nClass {class_label} - False Negatives by Gender:")
+    print(fn_by_gender_by_class[class_label])
+
+    print(f"\nClass {class_label} - Proportion FP per Gender:")
+    for gender in results['Gender'].unique():
+        proportion_fp = fp_by_gender_by_class[class_label].get(gender, 0) / total_fp_by_gender.get(gender, 1)
+        print(f"{gender}: {proportion_fp:.2%}")
+
+    print(f"\nClass {class_label} - Proportion FN per Gender:")
+    for gender in results['Gender'].unique():
+        proportion_fn = fn_by_gender_by_class[class_label].get(gender, 0) / total_fn_by_gender.get(gender, 1)
+        print(f"{gender}: {proportion_fn:.2%}")
