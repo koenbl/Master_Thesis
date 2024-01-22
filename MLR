@@ -1,0 +1,149 @@
+## libraries to run the code:
+import pandas as pd
+from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
+from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, balanced_accuracy_score, precision_score, recall_score, confusion_matrix, classification_report
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+X = df_testing3[predictors]
+y = df_testing3['Sleep quality']
+
+ordinal_encoder = OrdinalEncoder()
+y_encoded = ordinal_encoder.fit_transform(df_testing3['Sleep quality'].values.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+minmax_scaler = MinMaxScaler()
+X_train_normalized = minmax_scaler.fit_transform(X_train)
+X_test_normalized = minmax_scaler.transform(X_test)
+
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+param_dist = {
+    'penalty': ['l1', 'l2', 'elasticnet', 'none'],
+    'solver': ['newton-cg', 'lbfgs', 'sag', 'saga'],
+    'multi_class': ['auto', 'multinomial'],
+    'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000]
+}
+
+logreg_model_tuning = LogisticRegression(random_state=42, max_iter=1000, multi_class='multinomial')
+
+random_search_logreg_tuning = RandomizedSearchCV(
+    logreg_model_tuning,
+    param_distributions=param_dist,
+    cv=cv,
+    scoring='f1_macro',
+    random_state=42,
+    n_jobs=-1,
+    n_iter=200,
+    verbose=1
+)
+
+random_search_logreg_tuning.fit(X_train_normalized, y_train)
+
+print("Best Parameters:", random_search_logreg_tuning.best_params_)
+
+best_logreg_model_tuning = random_search_logreg_tuning.best_estimator_
+
+y_cv_pred_log_best_tuning_train = cross_val_predict(best_logreg_model_tuning, X_train_normalized, y_train, cv=cv)
+
+y_test_pred_log_best_tuning = best_logreg_model_tuning.predict(X_test_normalized)
+
+f1_macro_test_log_best = f1_score(y_test, y_test_pred_log_best_tuning, average='macro')
+balanced_acc_test_log_best = balanced_accuracy_score(y_test, y_test_pred_log_best_tuning)
+precision_test_log_best = precision_score(y_test, y_test_pred_log_best_tuning, average='macro')
+recall_test_log_best = recall_score(y_test, y_test_pred_log_best_tuning, average='macro')
+
+print("\nModel Performance Metrics on Test Set - Logistic Regression (Best Model Tuned):")
+print(f"F1 Macro tuned LR: {f1_macro_test_log_best}")
+print(f"Balanced Accuracy tuned LR: {balanced_acc_test_log_best}")
+print(f"Precision Macro tuned LR: {precision_test_log_best}")
+print(f"Recall Macro tuned LR: {recall_test_log_best}")
+
+original_classes = ordinal_encoder.categories_[0]
+
+conf_mat_test_lr_best = confusion_matrix(y_test, y_test_pred_log_best_tuning)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_mat_test_lr_best, annot=True, fmt="d", cmap="Blues", xticklabels=original_classes, yticklabels=original_classes)
+plt.title("Confusion Matrix - Multiclass Logistic Regression - Tuned")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.show()
+
+
+
+print("\nClassification Report - Logistic Regression (Best Model):")
+classification_rep_log_best_tuning = classification_report(y_test, y_test_pred_log_best_tuning, target_names=original_classes.astype(str), digits=3)
+print(classification_rep_log_best_tuning)
+
+
+## the following is the MLR + SMOTE
+X = df_testing3[predictors]
+y = df_testing3['Sleep quality']
+
+ordinal_encoder = OrdinalEncoder()
+y_encoded = ordinal_encoder.fit_transform(y.values.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+param_dist = {
+    'logisticregression__penalty': ['l1', 'l2', 'elasticnet', 'none'],
+    'logisticregression__multi_class': ['auto', 'multinomial'],
+    'logisticregression__solver': ['newton-cg', 'lbfgs', 'sag', 'saga'],
+    'logisticregression__C': [0.001, 0.01, 0.1, 1, 10, 100, 1000]
+}
+
+imba_pipeline_logreg_tuning_smote = Pipeline([
+    ('smote', SMOTE(random_state=42)),
+    ('logisticregression', LogisticRegression(random_state=42, max_iter=1000, multi_class='multinomial'))
+])
+
+search_imba = RandomizedSearchCV(imba_pipeline_logreg_tuning_smote, param_distributions=param_dist, cv=cv, scoring='f1_macro',
+                                  return_train_score=True, random_state=42, n_jobs=-1, n_iter=1000, verbose=1)
+search_imba.fit(X_train_scaled, y_train)
+
+print("Best Parameters:", search_imba.best_params_)
+
+y_test_predict_lr_smote = search_imba.predict(X_test_scaled)
+
+f1_macro_test_imba_lr = f1_score(y_test, y_test_predict_lr_smote, average='macro')
+balanced_acc_test_imba_lr = balanced_accuracy_score(y_test, y_test_predict_lr_smote)
+precision_test_imba_lr = precision_score(y_test, y_test_predict_lr_smote, average='macro')
+recall_test_imba_lr = recall_score(y_test, y_test_predict_lr_smote, average='macro')
+
+print("\nModel Performance Metrics on Test Set - Logistic Regression with SMOTE (Best Model):")
+print(f"F1 Macro: {f1_macro_test_imba_lr}")
+print(f"Balanced Accuracy: {balanced_acc_test_imba_lr}")
+print(f"Precision Macro: {precision_test_imba_lr}")
+print(f"Recall Macro: {recall_test_imba_lr}")
+
+conf_mat_test_lr_imba = confusion_matrix(y_test, y_test_predict_lr_smote)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_mat_test_lr_imba, annot=True, fmt="d", cmap="Blues", xticklabels=original_classes, yticklabels=original_classes)
+plt.title("Confusion Matrix - Multiclass Logistic Regression - Tuned - SMOTE")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.show()
+
+
+original_classes = ordinal_encoder.categories_[0]
+
+print("\nClassification Report - Logistic Regression with SMOTE (Best Model):")
+classification_rep_lr_smote = classification_report(y_test, y_test_predict_lr_smote, target_names=original_classes.astype(str), digits=3)
+print(classification_rep_lr_smote)
+
+
+
