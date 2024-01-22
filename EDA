@@ -1,1 +1,25 @@
+#load the dataset and adjust sleep quality and the predictor variables. 
+excel_file_path = 'cleaned_phone_use_noLOC\data\sleepquality_duration_category_2.xlsx'  
+
+df_testing3 = pd.read_excel(excel_file_path)
+
+user_ids_to_drop = [15246, 24202, 25502, 24012, 23920, 24038, 24300, 25216, 25237, 25544]
+df_testing3 = df_testing3[~df_testing3['userid'].isin(user_ids_to_drop)]
+
+df_testing3['Sleep quality'].replace(0, pd.NA, inplace=True)
+
+df_testing3['total_duration_browsing'].fillna(0, inplace=True)
+df_testing3['total_duration_games'].fillna(0, inplace=True)
+df_testing3['total_duration_messaging'].fillna(0, inplace=True)
+df_testing3['total_duration_social_media'].fillna(0, inplace=True)
+df_testing3['total_duration_video_streaming'].fillna(0, inplace=True)
+
+
+predictors = [
+    'total_duration_browsing',
+    'total_duration_games',
+    'total_duration_messaging',
+    'total_duration_social_media',
+    'total_duration_video_streaming'
+]
 
