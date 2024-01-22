@@ -1,12 +1,13 @@
 #load the dataset and adjust sleep quality and the predictor variables. 
+#multiple versions of the dataset were employed, with df_testing3 being the final dataset used. 
+#this section follows the structure of the thesis. 
+
 excel_file_path = 'cleaned_phone_use_noLOC\data\sleepquality_duration_category_2.xlsx'  
 
 df_testing3 = pd.read_excel(excel_file_path)
 
-user_ids_to_drop = [15246, 24202, 25502, 24012, 23920, 24038, 24300, 25216, 25237, 25544]
-df_testing3 = df_testing3[~df_testing3['userid'].isin(user_ids_to_drop)]
-
 df_testing3['Sleep quality'].replace(0, pd.NA, inplace=True)
+df_testing3['Sleep quality'] = df_testing3['Sleep quality'].astype(int)
 
 df_testing3['total_duration_browsing'].fillna(0, inplace=True)
 df_testing3['total_duration_games'].fillna(0, inplace=True)
@@ -22,4 +23,83 @@ predictors = [
     'total_duration_social_media',
     'total_duration_video_streaming'
 ]
+
+# add gender to each userid
+
+file_path = "cleaned_phone_use_noLOC/data/one_time.csv"
+df_onetime = pd.read_csv(file_path)
+print(df_onetime)
+
+sex_responses = df_onetime[df_onetime['Question'].str.contains('Sex', case=False, na=False)]
+sex_data = sex_responses[['UserID', 'Response']].drop_duplicates()
+print(sex_data)
+
+sex_data = sex_data.rename(columns={'UserID': 'userid'})
+df_testing3 = pd.merge(df_testing3, sex_data, on='userid', how='left')
+df_testing3 = df_testing3.rename(columns={'Response': 'Gender'})
+print(df_testing3['Gender'].unique())
+
+
+# to plot the distribution of each predictor
+fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(15, 8))
+axes = axes.flatten()
+
+for predictor in predictors:
+    predictor_name = predictor.replace('_', ' ')
+    
+    plt.figure(figsize=(8, 6))
+    sns.histplot(df_testing3[predictor], kde=False, color='skyblue', bins=30)
+    plt.title(f'Distribution of {predictor_name}')
+    plt.xlabel(predictor_name)
+    plt.ylabel('Frequency')
+    plt.show()
+
+
+#to plot a boxplot of each predictor:
+for predictor in predictors:
+    predictor_name = predictor.replace('_', ' ')
+    
+    plt.figure(figsize=(8, 6))
+    sns.boxplot(x=df_testing3[predictor], color='skyblue')
+    plt.title(f'Boxplot of {predictor_name}')
+    plt.xlabel(predictor_name)
+    plt.ylabel('Value')
+    plt.show()
+
+
+# to calculate and show the percentage of zeros in each predictor:
+percentage_counts = {}
+for predictor in predictors:
+    zero_count = (df_testing3[predictor] == 0).sum()
+    total_count = len(df_testing3[predictor])
+    percentage_counts[predictor] = (zero_count / total_count) * 100
+
+for predictor, percentage in percentage_counts.items():
+    print(f"Percentage of 0 in {predictor}: {percentage:.2f}%")
+
+#to count the percentage of missing values in Sleep quality
+
+df_testing_sleepquality = pd.read_excel(excel_file_path)
+zero_count = (df_testing_sleepquality['Sleep quality'] == 0).sum()
+zero_percentage = (zero_count / len(df_testing_sleepquality['Sleep quality'])) * 100
+print(f"Percentage of 0 values in 'Sleep quality': {zero_percentage:.2f}%")
+
+plt.figure(figsize=(8, 6))
+sns.histplot(df_testing_sleepquality['Sleep quality'], kde=False, color='skyblue', bins=30)
+plt.title('Distribution of Sleep Quality')
+plt.xlabel('Sleep Quality')
+plt.ylabel('Frequency')
+plt.show()
+
+#to drop the missing values rows in Sleep quality. 
+df_testing3.dropna(subset=['Sleep quality'], inplace=True)
+#and then new distribution:
+
+plt.figure(figsize=(8, 6))
+sns.histplot(df_testing_sleepquality['Sleep quality'], kde=False, color='skyblue', bins=30)
+plt.title('Distribution of Sleep Quality (Excluding 0)')
+plt.xlabel('Sleep Quality')
+plt.ylabel('Frequency')
+plt.show()
+
 
