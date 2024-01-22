@@ -1,0 +1,160 @@
+##libraries used
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
+from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
+from sklearn.metrics import f1_score, balanced_accuracy_score, precision_score, recall_score, confusion_matrix, classification_report
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import make_pipeline
+from xgboost import XGBClassifier
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+
+
+##XGBoost 
+X = df_testing3[predictors]
+y = df_testing3['Sleep quality']
+
+ordinal_encoder = OrdinalEncoder()
+y_encoded = ordinal_encoder.fit_transform(y.values.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+param_dist_adjusted_XGB = {
+    'max_depth': list(range(2, 33)),
+    'n_estimators': list(range(100, 701, 50)),
+    'subsample': np.arange(0.5, 1.1, 0.1),
+    'colsample_bytree': np.arange(0.5, 1.0, 0.1),
+    'reg_alpha': np.logspace(-3, 1, 5),  
+    'reg_lambda': np.logspace(-3, 1, 5), 
+    'gamma': np.arange(0, 1.01, 0.01),
+}
+
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+xgb_model_with_tuning = xgb.XGBClassifier(random_state=42)
+
+random_search_xgb_tuning = RandomizedSearchCV(
+    xgb_model_with_tuning,
+    param_distributions=param_dist_adjusted_XGB,
+    cv=cv,
+    scoring='f1_macro',
+    random_state=42,
+    n_jobs=-1,
+    n_iter=100,
+    verbose=1
+)
+
+random_search_xgb_tuning.fit(X_train_scaled, y_train)
+
+best_xgb_model = random_search_xgb_tuning.best_estimator_
+
+y_cv_pred_xgb_tuning = cross_val_predict(best_xgb_model, X_train_scaled, y_train, cv=cv)
+
+print("Best Parameters for XGBoost:", random_search_xgb_tuning.best_params_)
+
+best_xgb_model.fit(X_train_scaled, y_train) 
+y_test_pred_xgb_tuning = best_xgb_model.predict(X_test_scaled)
+
+y_test_pred_xgb_tuning_original = ordinal_encoder.inverse_transform(y_test_pred_xgb_tuning.reshape(-1, 1))
+
+f1_macro_test_xgb_tuning = f1_score(y_test, y_test_pred_xgb_tuning, average='macro')
+balanced_acc_test_xgb_tuning = balanced_accuracy_score(y_test, y_test_pred_xgb_tuning)
+precision_test_xgb_tuning = precision_score(y_test, y_test_pred_xgb_tuning, average='macro')
+recall_test_xgb_tuning = recall_score(y_test, y_test_pred_xgb_tuning, average='macro')
+
+
+print("\nModel Performance Metrics on Test Set - XGBoost with Tuning:")
+print(f"F1 Macro: {f1_macro_test_xgb_tuning}")
+print(f"Balanced Accuracy: {balanced_acc_test_xgb_tuning}")
+print(f"Precision Macro: {precision_test_xgb_tuning}")
+print(f"Recall Macro: {recall_test_xgb_tuning}")
+
+conf_mat_test_xgb_tuning = confusion_matrix(y_test, y_test_pred_xgb_tuning)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_mat_test_xgb_tuning, annot=True, fmt="d", cmap="Blues", xticklabels=original_classes, yticklabels=original_classes)
+plt.title("Confusion Matrix - XGBoost - Tuned")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.show()
+
+
+classification_rep_test_xgb_tuning = classification_report(y_test, y_test_pred_xgb_tuning, digits=3)
+print("\nClassification Report on Test Set - XGBoost with Tuning:")
+print(classification_rep_test_xgb_tuning)
+
+
+## + SMOTE
+
+
+X = df_testing3[predictors]
+y = df_testing3['Sleep quality']
+
+ordinal_encoder = OrdinalEncoder()
+y_encoded = ordinal_encoder.fit_transform(y.values.reshape(-1, 1)).flatten()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+param_dist_XG = {
+    'xgbclassifier__n_estimators': list(range(100, 701, 50)),
+    'xgbclassifier__max_depth': list(range(2, 33)),
+    'xgbclassifier__subsample': np.arange(0.5, 1.1, 0.1),
+    'xgbclassifier__gamma': [0, 0.1, 0.2, 0.3, 0.4],
+    'xgbclassifier__colsample_bytree': np.arange(0.5, 1.0, 0.1),
+    'xgbclassifier__reg_alpha': np.logspace(-3, 1, 5),
+    'xgbclassifier__reg_lambda': np.logspace(-3, 1, 5)
+}
+
+imba_pipeline_XG_tuning_Smote = make_pipeline(SMOTE(random_state=42), 
+                              XGBClassifier(random_state=42))
+
+search_imba_XG_tuned_Smote = RandomizedSearchCV(imba_pipeline_XG_tuning_Smote, param_distributions=param_dist_XG, cv=cv, scoring='f1_macro',
+                                  return_train_score=True, random_state=42, n_jobs=-1, n_iter=100, verbose=1)
+search_imba_XG_tuned_Smote.fit(X_train_scaled, y_train)
+
+print("Best Parameters for XGBoost with SMOTE:", search_imba_XG_tuned_Smote.best_params_)
+
+y_test_predict_XG_smote = search_imba_XG_tuned_Smote.predict(X_test_scaled)
+
+f1_macro_test_imba_XG_smote = f1_score(y_test, y_test_predict_XG_smote, average='macro')
+balanced_acc_test_imba_XG_smote = balanced_accuracy_score(y_test, y_test_predict_XG_smote)
+precision_test_imba_XG_smote = precision_score(y_test, y_test_predict_XG_smote, average='macro')
+recall_test_imba_XG_smote = recall_score(y_test, y_test_predict_XG_smote, average='macro')
+
+
+print("\nModel Performance Metrics on Test Set - Logistic Regression with SMOTE (Best Model):")
+print(f"F1 Macro: {f1_macro_test_imba_XG_smote}")
+print(f"Balanced Accuracy: {balanced_acc_test_imba_XG_smote}")
+print(f"Precision Macro: {precision_test_imba_XG_smote}")
+print(f"Recall Macro: {recall_test_imba_XG_smote}")
+
+y_test_predict_XG_smote_original = ordinal_encoder.inverse_transform(y_test_predict_XG_smote)
+
+conf_mat_test_XG_tuned_smote = confusion_matrix(y_test, y_test_predict_XG_smote)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_mat_test_XG_tuned_smote, annot=True, fmt="d", cmap="Blues", xticklabels=original_classes, yticklabels=original_classes)
+plt.title("Confusion Matrix - XGBoost - Tuned - SMOTE")
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.show()
+
+
+y_test_pred_xgb_tuning_SMOTE = ordinal_encoder.inverse_transform(y_test_predict_XG_smote)
+y_test_original = ordinal_encoder.inverse_transform(y_test)
+
+print("\nClassification Report - XGBoost with Tuning - SMOTE:")
+print(classification_report(y_test, y_test_predict_XG_smote, digits=3))
