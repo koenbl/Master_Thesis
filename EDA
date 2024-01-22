@@ -1,3 +1,7 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 #load the dataset and adjust sleep quality and the predictor variables. 
 #multiple versions of the dataset were employed, with df_testing3 being the final dataset used. 
 #this section follows the structure of the thesis. 
