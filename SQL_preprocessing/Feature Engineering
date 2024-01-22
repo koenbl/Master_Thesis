@@ -1,0 +1,90 @@
+-- The following code was used to do most of the preprocessing and feature engineering. 
+-- Note that the following is done in SQL Version 19.
+
+
+WITH AdjustedTimestamps AS (
+    SELECT
+        userid,
+        application,
+        starttimemillis,
+        endtimemillis,
+        CASE
+            WHEN CAST(starttime AS TIME) >= '00:00:00' AND CAST(starttime AS TIME) <= '06:00:00'
+                THEN DATEADD(DAY, -1, CAST(starttime AS DATETIME))
+            ELSE CAST(starttime AS DATETIME)
+        END AS AdjustedStartTime,
+        CASE
+            WHEN CAST(endtime AS TIME) >= '00:00:00' AND CAST(endtime AS TIME) <= '06:00:00'
+                THEN DATEADD(DAY, -1, CAST(endtime AS DATETIME))
+            ELSE CAST(endtime AS DATETIME)
+        END AS AdjustedEndTime
+    FROM dbo.combined_data
+)
+SELECT
+    userid,
+    AdjustedStartTime AS startTime,
+    AdjustedEndTime AS Endtime,
+    CONVERT(DATE, AdjustedStartTime) AS Startdate,
+    application,
+    (endtimemillis - starttimemillis) / 1000 AS [Duration_in_seconds],
+    CASE
+        WHEN better_category LIKE '%brows%' THEN 'Browsing'
+        WHEN (better_category LIKE '%game%' OR name = 'Google Play Games') THEN 'Games' 
+        WHEN better_category LIKE '%mess%' THEN 'Messaging'
+        WHEN better_category = 'Social_Networking' THEN 'Social media'
+        WHEN better_category LIKE '%stream%' AND category NOT IN ('music & audio', 'news & magazines') THEN 'Video streaming'  
+    END AS [Application_category]
+INTO #temp1
+FROM AdjustedTimestamps
+INNER JOIN dbo.app_categories cat ON AdjustedTimestamps.application = cat.app_id;
+
+
+
+SELECT
+    A.userid,
+    A.date,
+    A.previous_day_date,
+    A.[Sleep quality],
+    B.startdate,
+    B.total_duration_browsing,
+    B.total_duration_games,
+    B.total_duration_messaging,
+    B.total_duration_social_media,
+    B.total_duration_video_streaming,
+	B.other
+	INTO #Tempamountmissingdatasleep
+FROM (
+    SELECT
+        userid,
+        date,
+        CAST(DATEADD(DAY, -1, date) AS DATE) AS previous_day_date,
+        SL5 AS [Sleep quality]
+    FROM dbo.once_daily
+) AS A
+INNER JOIN (
+    SELECT
+        userid,
+        startdate,
+        [browsing] AS total_duration_browsing,
+        [games] AS total_duration_games,
+        [messaging] AS total_duration_messaging,
+        [social media] AS total_duration_social_media,
+        [video streaming] AS total_duration_video_streaming,
+		[other] AS other
+    FROM (
+        SELECT
+            userid,
+            MIN(startdate) AS startdate, -- Assumes one 'startdate' per 'userid'
+            Application_category,
+            duration_in_seconds
+        FROM #temp1
+        WHERE Application_category IN ('browsing', 'games', 'messaging', 'social media', 'video streaming', 'Other')
+        GROUP BY userid, Application_category, duration_in_seconds
+    ) AS SourceTable
+    PIVOT (
+        SUM(duration_in_seconds)
+        FOR Application_category IN (
+            [browsing], [games], [messaging], [social media], [video streaming], [other]
+        )
+    ) AS PivotTable
+) AS B ON A.userid = B.userid AND A.previous_day_date = B.startdate;
